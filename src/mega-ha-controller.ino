@@ -435,7 +435,9 @@ void loop()
     //Set Relay based on stored state
     //This allows the state to be set by something else like the mqtt callback controller
     //publish a state message
-    if (relays[i] != relayStates[i]) {
+    // Serial.println("Testing for state change on " + String(i) + ". Relay is " + String(digitalRead(relays[i])) + ". State is " + String(relayStates[i]) + ".");
+    if (digitalRead(relays[i]) != relayStates[i]) {
+      Serial.println("...Sending State...");
       sendState(i);
     }
     digitalWrite(relays[i],relayStates[i]);
@@ -458,5 +460,5 @@ void loop()
 
   // Delay a little bit to avoid bouncing
   delay(50);
-  
+
 }
