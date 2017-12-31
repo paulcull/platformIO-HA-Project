@@ -9,16 +9,12 @@
 #include <Ethernet.h>
 #include <PubSubClient.h>
 
-// #include <SPI.h>
-// #include <Ethernet.h>
 #include <ArduinoJson.h>
-// #include <PubSubClient.h>
 #include <avr/wdt.h>
 
 /************ network Setup Information (CHANGE THESE FOR YOUR SETUP) ******************/
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0x01 };
-// IPAddress ip( 192, 168, 1, 232 ); // use DHCP as preference
-IPAddress ip( 192, 168, 1, 86 ); // use DHCP as preference
+IPAddress ip( 192, 168, 1, 250 ); // use DHCP as preference
 IPAddress dnsAddr( 192, 168, 1, 254 ); // use DHCP as preference
 IPAddress gateway( 192, 168, 1, 254 ); // use DHCP as preference
 IPAddress google( 64, 233, 187, 99 ); // Google - for testing network setup
@@ -46,16 +42,13 @@ const char* toggle_cmd = "TOGGLE";
 const int BUFFER_SIZE = JSON_OBJECT_SIZE(10);
 //#define MQTT_MAX_PACKET_SIZE 512 // already defined in the pubsubclient // only extend if needed
 
-
-/**************************** define the clients ***************************************/
+/**************************** define the network interface clients *********************/
 EthernetClient ethClient;
 PubSubClient mqttclient(ethClient);
-
 
 /**************************** Borad Details ********************************************/
 const char* controllerName = "HA-Controller1";
 int uptime = 0;
-
 
 /**************************** PIN Details **********************************************/
 #define NUM_BUTTONS 8
@@ -86,7 +79,6 @@ const int relay6 = 32;
 const int relay7 = 34;
 const int relay8 = 36;
 int relays[] = {relay1,relay2,relay3,relay4,relay5,relay6,relay7,relay8};
-
  
 /****************** State Register Details **********************************************/
 
@@ -124,7 +116,6 @@ const int buttonLastState8 = LOW;
 int buttonLastStates[] = {buttonLastState1,buttonLastState2,buttonLastState3,buttonLastState4,buttonLastState5,buttonLastState6,buttonLastState7,buttonLastState8};
 int pushbuttonLastState = LOW;
 
-
 // INITIAL relay state
 const int relayState1 = 0;
 const int relayState2 = 0;
@@ -136,51 +127,45 @@ const int relayState7 = 0;
 const int relayState8 = 0;
 int relayStates[] = {relayState1,relayState2,relayState3,relayState4,relayState5,relayState6,relayState7,relayState8};
 
-
 /********************************** START SETUP*****************************************/
 void setup()
 {
 
   // start the serial library:
+  // Set up serial port and wait until connected
   Serial.begin(9600);
+  while(!Serial && !Serial.available()){}
   Serial.println("Boot Started on " + String(controllerName) + "...");
 
-  // Using the Ethernet Shield, pin 10 (SS) should be output,
-  // and pin 4 and pin 10 are used for chip select. Disable both.
-  pinMode( 10, OUTPUT);
-  digitalWrite( 10, HIGH);     // disable this chip select
-  pinMode( 4, OUTPUT);
-  digitalWrite( 4, HIGH);      // disable this chip select
-
   // Pin mapping setup
-  Serial.println("Boot Start Board Config...");
+  Serial.println(" Boot Start Board Config...");
   setup_pins();
-  Serial.println("Boot Start Board Config...Done");
+  Serial.println(" Boot Start Board Config...Done");
 
-  Serial.println("Boot Start Network...");
-  Serial.println("Boot Start Network...Ethernet...");
+  Serial.println(" Boot Start Network...");
+  Serial.println(" Boot Start Network...Ethernet...");
   network_wifi = false;
   setup_ethernet();
   delay(1000); // wait a second
-  Serial.println("Boot Start Network...Ethernet...Done");  
+  Serial.println(" Boot Start Network...Ethernet...Done");  
 
 
   
   // MQTT setup
-  Serial.println("Boot Start MQTT...");
+  Serial.println(" Boot Start MQTT...");
   setup_mqtt();  
   delay(1000); // wait a second
-  Serial.println("Boot Start MQTT...Done");
+  Serial.println(" Boot Start MQTT...Done");
 
   // Start watchdog
-  Serial.println("Boot Start watchdog...");
+  Serial.println(" Boot Start watchdog...");
   wdt_enable(WDTO_4S);
-  Serial.println("Watchdog started at 4 seconds...");
-  Serial.println("Boot Start watchdog...Done");
+  Serial.println("   Watchdog started at 4 seconds...");
+  Serial.println(" Boot Start watchdog...Done");
 
   // Finish
   Serial.println("Boot Completed on " + String(controllerName));
-  Serial.println("Ready");
+  Serial.println("Waiting for action or input...");
 
 
 }
@@ -245,7 +230,14 @@ void setup_mqtt() {
   Serial.print("  Connecting to MQTT server...");
   Serial.println(mqtt_server);
   mqttclient.setServer(mqtt_server, mqtt_port);
- mqttclient.connect(controllerName);
+
+  if (mqttclient.connect(controllerName)) {
+    Serial.println("  connected... Subscribing to " + String(mqtt_channel_sub));
+    mqttclient.publish(mqtt_channel_pub,"I'm alive"); 
+    // ... and subscribe to topic
+    mqttclient.subscribe(mqtt_channel_sub);
+  }
+
   Serial.print("  mqtt connected status...");
   Serial.println(mqttclient.connected());
   Serial.print("  mqtt state...");
@@ -383,8 +375,7 @@ void reconnect() {
   while (!mqttclient.connected()) {
     Serial.print("  Attempting MQTT connection...");
     // Attempt to connect
-//    if (mqttclient.connect(controllerName)) {
-    if (mqttclient.connect("PC_TEST")) {
+   if (mqttclient.connect(controllerName)) {
       Serial.println("  connected... Subscribing to " + String(mqtt_channel_sub));
       mqttclient.publish(mqtt_channel_pub,"I'm alive"); 
       // ... and subscribe to topic
