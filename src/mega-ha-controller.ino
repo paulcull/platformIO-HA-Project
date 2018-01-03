@@ -5,10 +5,11 @@
 
 // */
 
+// load dependancies
 #include <SPI.h>
 #include <Ethernet.h>
 #include <PubSubClient.h>
-
+#include <Timer.h>
 #include <ArduinoJson.h>
 #include <avr/wdt.h>
 
@@ -37,10 +38,12 @@ const char* on_cmd = "ON";
 const char* off_cmd = "OFF";
 const char* toggle_cmd = "TOGGLE";
 
+/************************************ For Timer ****************************************/
+Timer t;
 
 /****************************************FOR JSON***************************************/
-const int BUFFER_SIZE = JSON_OBJECT_SIZE(10);
-//#define MQTT_MAX_PACKET_SIZE 512 // already defined in the pubsubclient // only extend if needed
+const int BUFFER_SIZE = JSON_OBJECT_SIZE(100);
+const int BIG_BUFFER_SIZE = JSON_OBJECT_SIZE(256);
 
 /**************************** define the network interface clients *********************/
 EthernetClient ethClient;
@@ -149,8 +152,6 @@ void setup()
   delay(1000); // wait a second
   Serial.println(" Boot Start Network...Ethernet...Done");  
 
-
-  
   // MQTT setup
   Serial.println(" Boot Start MQTT...");
   setup_mqtt();  
@@ -162,6 +163,13 @@ void setup()
   wdt_enable(WDTO_4S);
   Serial.println("   Watchdog started at 4 seconds...");
   Serial.println(" Boot Start watchdog...Done");
+
+  // Start heartbeat pulsing
+  Serial.println(" Boot Start heartbeat...");
+  int heartbeart = t.every(10000, sendHeartbeat);
+  Serial.print("    5 second tick started id=");
+  Serial.println(heartbeart);
+  Serial.println(" Boot Start heartbeat...Done");
 
   // Finish
   Serial.println("Boot Completed on " + String(controllerName));
@@ -230,10 +238,12 @@ void setup_mqtt() {
   Serial.print("  Connecting to MQTT server...");
   Serial.println(mqtt_server);
   mqttclient.setServer(mqtt_server, mqtt_port);
+  Serial.println("  #define MQTT_MAX_PACKET_SIZE :  " + String(MQTT_MAX_PACKET_SIZE));
 
   if (mqttclient.connect(controllerName)) {
     Serial.println("  connected... Subscribing to " + String(mqtt_channel_sub));
-    mqttclient.publish(mqtt_channel_pub,"I'm alive"); 
+    sendHeartbeat();
+    // mqttclient.publish(mqtt_channel_pub,"I'm alive"); 
     // ... and subscribe to topic
     mqttclient.subscribe(mqtt_channel_sub);
   }
@@ -335,6 +345,22 @@ bool processJson(char* message) {
   return true;
 }
 
+/********************************** START SEND Dig In ***************************************/
+void sendDigitalIn(int digIn) {
+
+  StaticJsonBuffer<BUFFER_SIZE> jsonBuffer;
+  JsonObject& root = jsonBuffer.createObject();
+
+  root["controller"] = controllerName;
+  root["digitalIn"] = String(digIn);
+  root["count"] = String(buttonCounters[digIn]);
+
+  char buffer[root.measureLength() + 1];
+  root.printTo(buffer, sizeof(buffer));
+
+  mqttclient.publish(mqtt_channel_pub, buffer, true);  
+}
+
 /********************************** START SEND STATE*****************************************/
 void sendState(int relay) {
 
@@ -354,17 +380,51 @@ void sendState(int relay) {
 /***************************** START SEND HEARTBEAT *****************************************/
 void sendHeartbeat() {
 
-  StaticJsonBuffer<BUFFER_SIZE> jsonBuffer;
+  Serial.println("Sending Heartbeat...");
+
+
+  StaticJsonBuffer<BIG_BUFFER_SIZE> jsonBuffer;
   JsonObject& root = jsonBuffer.createObject();
 
   root["controller"] = controllerName;
-  root["uptime"] = uptime;
+  root["uptime"] = String(uptime);
   root["alive"] = on_cmd;
+
+  JsonObject& relayStateJson = root.createNestedObject("relays");
+  // Serial.println("Sending Heartbeat...3");
+  for (int i = 0; i < NUM_RELAYS; i++) 
+  {
+  //   // Serial.println("Sending Heartbeat...3-1..." + String(i));
+    // Serial.println("Sending Heartbeat...3-2..." + String((relayStates[i]) ));
+    // Serial.println("Sending Heartbeat...3-2..." + String((relayStates[i]) ? on_cmd : off_cmd));
+    relayStateJson[String(i)] = (relayStates[i]) ? on_cmd : off_cmd;
+  }
+
+  JsonObject& buttonCountJson = root.createNestedObject("buttonCounts");
+  // Serial.println("Sending Heartbeat...4");
+  for (int k = 0; k < NUM_BUTTONS; k++) 
+  {
+  //   // Serial.println("Sending Heartbeat...4-1..." + String(j));
+  //   // Serial.println("Sending Heartbeat...4-2..." + String(buttonCounters[j]));
+    // buttonCountJson["TEST"] = "123412341234123412341234";
+    // buttonCountJson["TEST"+String(k)] = String(buttonCounters[k]);
+    buttonCountJson[String(k)] = String(buttonCounters[k]);
+    // buttonCountJson[String(j)] = String(buttonCounters[j]);
+  }
+
+  Serial.println("Sending Heartbeat...5..."+ String(root.measureLength() + 1));
 
   char buffer[root.measureLength() + 1];
   root.printTo(buffer, sizeof(buffer));
 
-  mqttclient.publish(mqtt_heartbeat, buffer, true);  
+  // Serial.println("Sending Heartbeat...6");
+  // Serial.println(buffer);
+
+  if (!mqttclient.publish(mqtt_heartbeat, buffer, true)){
+    Serial.println(F("Sending Heartbeat...Failed"));
+  } else {
+    Serial.println(F("Sending Heartbeat...Done"));
+  }    
 
 }
 
@@ -377,7 +437,8 @@ void reconnect() {
     // Attempt to connect
    if (mqttclient.connect(controllerName)) {
       Serial.println("  connected... Subscribing to " + String(mqtt_channel_sub));
-      mqttclient.publish(mqtt_channel_pub,"I'm alive"); 
+      sendHeartbeat();
+      // mqttclient.publish(mqtt_channel_pub,"I'm alive"); 
       // ... and subscribe to topic
       mqttclient.subscribe(mqtt_channel_sub);
     } else {
@@ -448,6 +509,11 @@ void loop()
   }
   pushbuttonLastState = pushbuttonState;
 
+  // update the timer check
+  t.update();
+
+  // check the mqtt queue for inbound mesasges
+  mqttclient.loop();
 
   // Delay a little bit to avoid bouncing
   delay(50);
