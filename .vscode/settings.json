@@ -1,5 +1,5 @@
 {
     "terminal.integrated.env.osx": {
-        "PATH": "/Users/paul/.platformio/penv/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        "PATH": "/Users/paul/.platformio/penv/bin:/opt/local/bin:/opt/local/sbin:/opt/local/bin:/opt/local/sbin:/usr/local/heroku/bin:/opt/local/bin:/opt/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/go/bin:/opt/X11/bin:/bin:/Users/paul/Documents/code/go/bin:/Users/paul/.rvm/bin"
     }
 }
