@@ -18,23 +18,30 @@
 /************ network Setup Information (CHANGE THESE FOR YOUR SETUP) ******************/
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0x01 };
 IPAddress ip( 192, 168, 1, 250 ); // use DHCP as preference
-IPAddress dnsAddr( 192, 168, 1, 254 ); // use DHCP as preference
-IPAddress gateway( 192, 168, 1, 254 ); // use DHCP as preference
+// IPAddress dnsAddr( 192, 168, 1, 254 ); // use DHCP as preference
+// IPAddress gateway( 192, 168, 1, 254 ); // use DHCP as preference
 IPAddress google( 64, 233, 187, 99 ); // Google - for testing network setup
 
 /************ WIFI  Information (CHANGE THESE FOR YOUR SETUP) **************************/
 bool network_wifi = false;
 
+/************ MQTT  Information (CHANGE THESE FOR YOUR SETUP) **************************/
+bool mqtt_active = false;
+
+/**************************** Board Details ********************************************/
+const char* controllerName = "HA-Controller1";
+int uptime = 0;
+
 /*********************** MQTT setup Details ********************************************/
-//const char* mqtt_server = "openHABianPine64.local";
-//const char* mqtt_server = "Pauls-MacBook-Pro.local";
-//const char* mqtt_server = "192.168.1.95"
 IPAddress mqtt_server(192, 168, 1, 28);
 const int mqtt_port = 1883;
 
-const char mqtt_channel_pub[] = "/home/bus/action/HA-Controller/";
-const char mqtt_heartbeat[] = "/home/bus/state/heartbeat/HA-Controller";
-const char mqtt_channel_sub[] = "/home/bus/state/HA-Controller/#";
+//const char controllerID = "1"
+const char mqtt_channel_pub[] = "/home/bus/action/HA-Controller/1/";
+const char mqtt_channel_sub[] = "/home/bus/state/HA-Controller/1/#";
+// const char* mqtt_channel_sub2[] = {"/home/bus/state/HA-Controller/" + controllerName + "/#"};
+
+char mqtt_heartbeat[] = "/home/bus/state/heartbeat/HA-Controller";
 
 const char* on_cmd = "ON";
 const char* off_cmd = "OFF";
@@ -50,10 +57,6 @@ const int BIG_BUFFER_SIZE = JSON_OBJECT_SIZE(256);
 /**************************** define the network interface clients *********************/
 EthernetClient ethClient;
 PubSubClient mqttclient(ethClient);
-
-/**************************** Borad Details ********************************************/
-const char* controllerName = "HA-Controller1";
-int uptime = 0;
 
 /**************************** PIN Details **********************************************/
 #define NUM_BUTTONS 8
@@ -122,14 +125,14 @@ int buttonLastStates[] = {buttonLastState1,buttonLastState2,buttonLastState3,but
 int pushbuttonLastState = LOW;
 
 // INITIAL relay state
-const int relayState1 = 0;
-const int relayState2 = 0;
-const int relayState3 = 0;
-const int relayState4 = 0;
-const int relayState5 = 0;
-const int relayState6 = 0;
-const int relayState7 = 0;
-const int relayState8 = 0;
+const int relayState1 = 1;
+const int relayState2 = 1;
+const int relayState3 = 1;
+const int relayState4 = 1;
+const int relayState5 = 1;
+const int relayState6 = 1;
+const int relayState7 = 1;
+const int relayState8 = 1;
 int relayStates[] = {relayState1,relayState2,relayState3,relayState4,relayState5,relayState6,relayState7,relayState8};
 
 /********************************** START SETUP*****************************************/
@@ -141,11 +144,6 @@ void setup()
   Serial.begin(9600);
   while(!Serial && !Serial.available()){}
   Serial.println("Boot Started on " + String(controllerName) + "...");
-
-  // Pin mapping setup
-  Serial.println(" Boot Start Board Config...");
-  setup_pins();
-  Serial.println(" Boot Start Board Config...Done");
 
   Serial.println(" Boot Start Network...");
   Serial.println(" Boot Start Network...Ethernet...");
@@ -160,6 +158,11 @@ void setup()
   delay(1000); // wait a second
   Serial.println(" Boot Start MQTT...Done");
 
+  // Pin mapping setup
+  Serial.println(" Boot Start Board Config...");
+  setup_pins();
+  Serial.println(" Boot Start Board Config...Done");
+
   // Start watchdog
   Serial.println(" Boot Start watchdog...");
   wdt_enable(WDTO_4S);
@@ -169,8 +172,11 @@ void setup()
   // Start heartbeat pulsing
   Serial.println(" Boot Start heartbeat...");
   int heartbeart = t.every(10000, sendHeartbeat);
-  Serial.print("    5 second tick started id=");
+  int second_count = t.every(1000, updateUptime);
+  Serial.print("    10 second tick started id=");
   Serial.println(heartbeart);
+  Serial.print("    uptime counter started id=");
+  Serial.println(second_count);
   Serial.println(" Boot Start heartbeat...Done");
 
   // Finish
@@ -178,6 +184,11 @@ void setup()
   Serial.println("Waiting for action or input...");
 
 
+}
+
+/********************************** INCREMENT UPTIME COUNTER ********************************/
+void updateUptime(){
+  uptime++;
 }
 
 /********************************** START SETUP PINS*****************************************/
@@ -198,7 +209,8 @@ void setup_pins() {
     buttonStates[i] = RELAY_OFF;
     buttonLastStates[i] = RELAY_OFF;
     pinMode(relays[i], OUTPUT);
-    digitalWrite(relays[i],RELAY_OFF);
+    digitalWrite(relays[i],RELAY_OFF); 
+    //sendHeartbeat();
   }
   
 }
@@ -237,24 +249,29 @@ void setup_ethernet() {
 /********************************** START SETUP MQTT*****************************************/
 void setup_mqtt() {
 
-  Serial.print("  Connecting to MQTT server...");
-  Serial.println(mqtt_server);
-  mqttclient.setServer(mqtt_server, mqtt_port);
-  Serial.println("  #define MQTT_MAX_PACKET_SIZE :  " + String(MQTT_MAX_PACKET_SIZE));
+  if (mqtt_active) {
 
-  if (mqttclient.connect(controllerName)) {
-    Serial.println("  connected... Subscribing to " + String(mqtt_channel_sub));
-    sendHeartbeat();
-    // mqttclient.publish(mqtt_channel_pub,"I'm alive"); 
-    // ... and subscribe to topic
-    mqttclient.subscribe(mqtt_channel_sub);
+    Serial.print("  Connecting to MQTT server...");
+    Serial.println(mqtt_server);
+    mqttclient.setServer(mqtt_server, mqtt_port);
+    Serial.println("  #define MQTT_MAX_PACKET_SIZE :  " + String(MQTT_MAX_PACKET_SIZE));
+
+    if (mqttclient.connect(controllerName)) {
+      Serial.println("  connected... Subscribing to " + String(mqtt_channel_sub));
+      //sendHeartbeat();
+      // mqttclient.publish(mqtt_channel_pub,"I'm alive"); 
+      // ... and subscribe to topic
+      mqttclient.subscribe(mqtt_channel_sub);
+    } 
+    Serial.print("  mqtt connected status...");
+    Serial.println(mqttclient.connected());
+    Serial.print("  mqtt state...");
+    Serial.println(mqttclient.state());
+    mqttclient.setCallback(callback);
+
+  } else {
+    Serial.print("  MQTT is disabled...Ignoring MQTT.");
   }
-
-  Serial.print("  mqtt connected status...");
-  Serial.println(mqttclient.connected());
-  Serial.print("  mqtt state...");
-  Serial.println(mqttclient.state());
-  mqttclient.setCallback(callback);
 
 }
 
@@ -277,9 +294,9 @@ void StringToChar(String input) {
 
 /********************************** START CALLBACK*****************************************/
 void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
+  Serial.print("Message arrived on [");
   Serial.print(topic);
-  Serial.print("] ");
+  Serial.print("] topic.");
 
   char message[length + 1];
   for (unsigned int i = 0; i < length; i++) {
@@ -288,12 +305,14 @@ void callback(char* topic, byte* payload, unsigned int length) {
   message[length] = '\0';
   Serial.println(message);
 
-  // if (!processJson(message)) {
-  //   return false;
-  // }
+  if (!processJson(message)) {
+    //return false;
+  } else {
+    //TODO sendState should be on the triggering cycle
+    //sendState(); // shoudn't need to do this as the loop cycle checks for registry vs actual diff and publishes
+    //return true;
+  }
 
-  //TODO sendState should be on the triggering cycle
-  //sendState();
 }
 
 /********************************** START PROCESS JSON*****************************************/
@@ -311,36 +330,63 @@ bool processJson(char* message) {
   StaticJsonBuffer<BUFFER_SIZE> jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(message);
 
+
   int relay = -1;
+  String action = "";
 
   if (!root.success()) {
     Serial.println("ERR: parseObject() json message failed");
     return false;
+  } else {
+    Serial.println("Processed parseObject() successfully");
   }
-
 
   if (!root.containsKey("relay")) {
     Serial.println("ERR: no relay provided in message");
     return false;
   } else {
     relay = root["relay"];
+    Serial.println("Got relay reference in process meassage of: " + String(relay));
+    if (!(relay > 0 && relay < NUM_RELAYS)){
+      Serial.println("ERR: no not a valid relay number [" + String(relay) + "]");
+      return false;
+    }
   }
 
   if (!root.containsKey("action") ) {
     Serial.println("ERR: no action directive");
     return false;
-  }
+  } else {
 
-  
-  if (root.containsKey("action")) {
-    if (strcmp(root["action"], on_cmd) == 0) {
-      relayStates[relay] = RELAY_ON;
-    }
-    else if (strcmp(root["action"], off_cmd) == 0) {
-      relayStates[relay] = RELAY_OFF;
-    }
-    else if (strcmp(root["action"], toggle_cmd) == 0) {
-      relayStates[relay] = !relayStates[relay];
+    Serial.println("**** 1 ****");
+
+
+    //http://arduinojson.org/faq/how-to-fix-error-ambiguous-overload-for-operator/
+    action = (const char*)root["action"];
+    Serial.println("**** 2 ****");
+    action = root["action"].as<const char*>();
+    Serial.println("**** 3 ****");
+    action = root["action"].as<String>();
+    Serial.println("**** 4 ****");
+
+    Serial.println("Got action reference in process meassage of: " + String(action));
+
+    if ((action == on_cmd) || (action == off_cmd) || (action == toggle_cmd)) {
+      // if (strcmp(action, on_cmd) == 0) {
+      if ((action == on_cmd)) {
+        relayStates[relay] = RELAY_ON;
+      }
+      else if ((action == off_cmd)) {
+        relayStates[relay] = RELAY_OFF;
+      }
+      else if ((action == toggle_cmd)) {
+        relayStates[relay] = !relayStates[relay];
+      }
+    } else {
+    Serial.print("ERR: action not recognised [");
+    Serial.print(String(action));
+    Serial.println("].");
+    return false;      
     }
   }
 
@@ -360,7 +406,18 @@ void sendDigitalIn(int digIn) {
   char buffer[root.measureLength() + 1];
   root.printTo(buffer, sizeof(buffer));
 
-  mqttclient.publish(mqtt_channel_pub, buffer, true);  
+
+  if (mqtt_active) {
+    if (!mqttclient.publish(mqtt_channel_pub, buffer, true)){
+      Serial.println("Sending Digital In...Failed...[message length = " + String(root.measureLength() + 1) + "]");
+    } else {
+      Serial.println(F("Sending Digital In...Done"));
+    }    
+  } else {
+      Serial.println(F("Sending Digital In on MQTT...Skipped"));
+      Serial.println(buffer);      
+  }
+
 }
 
 /********************************** START SEND STATE*****************************************/
@@ -371,12 +428,22 @@ void sendState(int relay) {
 
   root["controller"] = controllerName;
   root["relay"] = String(relay);
-  root["state"] = (relayStates[relay]) ? on_cmd : off_cmd;
+  root["state"] = (relayStates[relay]) ? off_cmd : on_cmd;
 
   char buffer[root.measureLength() + 1];
   root.printTo(buffer, sizeof(buffer));
 
-  mqttclient.publish(mqtt_channel_pub, buffer, true);  
+  if (mqtt_active) {
+    if (!mqttclient.publish(mqtt_channel_pub, buffer, true)){
+      Serial.println("Sending State...Failed...[message length = " + String(root.measureLength() + 1) + "]");
+    } else {
+      Serial.println(F("Sending State...Done"));
+    }    
+  } else {
+      Serial.println(F("Sending State on MQTT...Skipped"));
+      Serial.println(buffer);      
+  }
+
 }
 
 /***************************** START SEND HEARTBEAT *****************************************/
@@ -389,45 +456,44 @@ void sendHeartbeat() {
   JsonObject& root = jsonBuffer.createObject();
 
   root["controller"] = controllerName;
-  root["uptime"] = String(uptime);
+  root["uptime_seconds"] = String(uptime);
   root["alive"] = on_cmd;
 
   JsonObject& relayStateJson = root.createNestedObject("relays");
-  // Serial.println("Sending Heartbeat...3");
   for (int i = 0; i < NUM_RELAYS; i++) 
   {
-  //   // Serial.println("Sending Heartbeat...3-1..." + String(i));
-    // Serial.println("Sending Heartbeat...3-2..." + String((relayStates[i]) ));
-    // Serial.println("Sending Heartbeat...3-2..." + String((relayStates[i]) ? on_cmd : off_cmd));
-    relayStateJson[String(i)] = (relayStates[i]) ? on_cmd : off_cmd;
+    relayStateJson[String(i)] = (relayStates[i]) ? off_cmd : on_cmd;
+
+    //Print out we can see
+    // Serial.print(" *** relay states for ");
+    // Serial.print(relayStates[i]);
+    // Serial.print(" :: ");
+    // Serial.print((relayStates[i]) ? off_cmd : on_cmd);
+    // Serial.print(" :: ");
+    // Serial.print("Pin State");
+    // Serial.print(" :: ");
+    // Serial.println(String(digitalRead(relays[i])));
   }
 
   JsonObject& buttonCountJson = root.createNestedObject("buttonCounts");
-  // Serial.println("Sending Heartbeat...4");
   for (int k = 0; k < NUM_BUTTONS; k++) 
   {
-  //   // Serial.println("Sending Heartbeat...4-1..." + String(j));
-  //   // Serial.println("Sending Heartbeat...4-2..." + String(buttonCounters[j]));
-    // buttonCountJson["TEST"] = "123412341234123412341234";
-    // buttonCountJson["TEST"+String(k)] = String(buttonCounters[k]);
     buttonCountJson[String(k)] = String(buttonCounters[k]);
-    // buttonCountJson[String(j)] = String(buttonCounters[j]);
   }
-
-  Serial.println("Sending Heartbeat...5..."+ String(root.measureLength() + 1));
 
   char buffer[root.measureLength() + 1];
   root.printTo(buffer, sizeof(buffer));
 
-  // Serial.println("Sending Heartbeat...6");
-  // Serial.println(buffer);
-
-  if (!mqttclient.publish(mqtt_heartbeat, buffer, true)){
-    Serial.println(F("Sending Heartbeat...Failed"));
+  if (mqtt_active) {
+    if (!mqttclient.publish(mqtt_heartbeat, buffer, true)){
+      Serial.println("Sending Heartbeat...Failed...[message length = " + String(root.measureLength() + 1) + "]");
+    } else {
+      Serial.println(F("Sending Heartbeat...Done"));
+    }    
   } else {
-    Serial.println(F("Sending Heartbeat...Done"));
-  }    
-
+      Serial.println(F("Sending Heartbeat on MQTT...Skipped"));
+      Serial.println(buffer);
+  }
 }
 
 /********************************** START RECONNECT*****************************************/
@@ -463,10 +529,9 @@ void loop()
   //safely in the loop
   wdt_reset();
 
-  if (!mqttclient.connected()) {
+  if (!mqttclient.connected() && mqtt_active) {
     reconnect();
   }
-//  mqttclient.loop();
 
   for (int i = 0; i < NUM_RELAYS; i++) 
   {
@@ -475,6 +540,7 @@ void loop()
       if (buttonStates[i] == LOW) {
         buttonCounters[i]++;
         Serial.println("Button " + String(i) + " pressed for " + String(buttonCounters[i]) + " times.");
+        sendDigitalIn(i);
         //Now toggle the relay state for the corresponding button
         relayStates[i] = !relayStates[i];
         Serial.println("Setting relay " + String(i) + " to " + String(relayStates[i]));
@@ -489,7 +555,7 @@ void loop()
     //Set Relay based on stored state
     //This allows the state to be set by something else like the mqtt callback controller
     //publish a state message
-    // Serial.println("Testing for state change on " + String(i) + ". Relay is " + String(digitalRead(relays[i])) + ". State is " + String(relayStates[i]) + ".");
+
     if (digitalRead(relays[i]) != relayStates[i]) {
       Serial.println("...Sending State...");
       sendState(i);
@@ -515,8 +581,9 @@ void loop()
   t.update();
 
   // check the mqtt queue for inbound mesasges
-  mqttclient.loop();
-
+  if (mqtt_active) {
+    mqttclient.loop();
+  }
   // Delay a little bit to avoid bouncing
   delay(50);
 
