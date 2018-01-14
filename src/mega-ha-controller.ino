@@ -22,9 +22,6 @@ IPAddress ip( 192, 168, 1, 250 ); // use DHCP as preference
 // IPAddress gateway( 192, 168, 1, 254 ); // use DHCP as preference
 IPAddress google( 64, 233, 187, 99 ); // Google - for testing network setup
 
-/************ WIFI  Information (CHANGE THESE FOR YOUR SETUP) **************************/
-bool network_wifi = false;
-
 /************ MQTT  Information (CHANGE THESE FOR YOUR SETUP) **************************/
 bool mqtt_active = false;
 
@@ -73,6 +70,9 @@ int buttons[] = {button1,button2,button3,button4,button5,button6,button7,button8
 
 const byte pushButton = 49;
 const int pushButtonRelayMapping = 1;
+
+const byte redled = 49;
+const byte greenled = 47;
 
 // RELAY PIN NUMBERS
 const int NUM_RELAYS = 8;
@@ -147,7 +147,6 @@ void setup()
 
   Serial.println(" Boot Start Network...");
   Serial.println(" Boot Start Network...Ethernet...");
-  network_wifi = false;
   setup_ethernet();
   delay(1000); // wait a second
   Serial.println(" Boot Start Network...Ethernet...Done");  
@@ -197,6 +196,11 @@ void setup_pins() {
   //// Set Pins START ////
   Serial.println("Setting up I/O Pins...");
   pinMode(pushButton,INPUT_PULLUP);  
+  pinMode(redled,OUTPUT);
+  pinMode(greenled,OUTPUT);
+  // set redled On
+  digitalWrite(redled,HIGH);
+
   for (int i = 0; i < NUM_RELAYS; i++) {
     String msg = "  setting button " + String(i);
     String msg2 = msg + " for pin " + String(buttons[i]);
@@ -209,7 +213,7 @@ void setup_pins() {
     buttonStates[i] = RELAY_OFF;
     buttonLastStates[i] = RELAY_OFF;
     pinMode(relays[i], OUTPUT);
-    digitalWrite(relays[i],RELAY_OFF); 
+    digitalWrite(relays[i],RELAY_OFF); //NC relay
     //sendHeartbeat();
   }
   
